@@ -81,7 +81,7 @@
     <div class="stat-row" v-if="balance">
       <div class="stat-card glow-blue">
         <div class="stat-label">总余额</div>
-        <div class="stat-value green">{{ sym }}{{ balance.total.toFixed(2) }}</div>
+        <div class="stat-value green digital" :key="balance.total.toFixed(2)">{{ sym }}{{ balance.total.toFixed(2) }}</div>
       </div>
       <div class="stat-card">
         <div class="stat-label">充值余额</div>
@@ -94,34 +94,40 @@
     </div>
 
     <!-- Charts -->
-    <div class="chart-card" ref="trendCard">
-      <div class="card-title">余额趋势 (近14天)</div>
-      <div class="chart-wrap" ref="trendChart"></div>
-    </div>
+    <BorderBox8 :color="['#00d4ff', '#409eff']" background-color="transparent" class="chart-spacer">
+      <div class="chart-card" ref="trendCard">
+        <div class="card-title">余额趋势 (近14天)</div>
+        <div class="chart-wrap" ref="trendChart"></div>
+      </div>
+    </BorderBox8>
 
     <div class="chart-row">
-      <div class="chart-card half" ref="pricingCard">
-        <div class="card-title">模型定价 (CNY/百万Token)</div>
-        <div class="chart-wrap-small" ref="pricingChart"></div>
-      </div>
-      <div class="chart-card half">
-        <div class="card-title">消费统计</div>
-        <div class="cost-area" v-if="balance">
-          <div class="big-number">{{ estimatedTokens }}</div>
-          <div class="sub-text">可用 Token</div>
-          <div class="cost-divider"></div>
-          <div class="cost-row">
-            <span class="cost-label">今日</span>
-            <span class="cost-value">{{ sym }}{{ todayCost.toFixed(4) }}</span>
-          </div>
-          <div class="cost-row">
-            <span class="cost-label">近7天</span>
-            <span class="cost-value">{{ sym }}{{ weekCost.toFixed(2) }}</span>
-          </div>
-          <div class="tip-text" v-if="!hasHistory">点击顶部 🕐 补录历史余额</div>
-          <div class="tip-text" v-else>已积累 {{ history.length }} 天数据</div>
+      <BorderBox8 :color="['#a855f7', '#7c3aed']" background-color="transparent" class="flex-half">
+        <div class="chart-card half" ref="pricingCard">
+          <div class="card-title">模型定价对比 <span style="font-size:9px;opacity:0.5">¥/DeepSeek &nbsp;$≈7.2¥/OpenRouter</span></div>
+          <div class="chart-wrap-small" ref="pricingChart"></div>
         </div>
-      </div>
+      </BorderBox8>
+      <BorderBox8 :color="['#22c55e', '#15803d']" background-color="transparent" class="flex-half">
+        <div class="chart-card half">
+          <div class="card-title">消费统计</div>
+          <div class="cost-area" v-if="balance">
+            <div class="big-number">{{ estimatedTokens }}</div>
+            <div class="sub-text">可用 Token</div>
+            <div class="cost-divider"></div>
+            <div class="cost-row">
+              <span class="cost-label">今日</span>
+              <span class="cost-value">{{ sym }}{{ todayCost.toFixed(4) }}</span>
+            </div>
+            <div class="cost-row">
+              <span class="cost-label">近7天</span>
+              <span class="cost-value">{{ sym }}{{ weekCost.toFixed(2) }}</span>
+            </div>
+            <div class="tip-text" v-if="!hasHistory">点击顶部 🕐 补录历史余额</div>
+            <div class="tip-text" v-else>已积累 {{ history.length }} 天数据</div>
+          </div>
+        </div>
+      </BorderBox8>
     </div>
 
     <!-- Footer -->
@@ -133,8 +139,9 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import * as echarts from 'echarts'
+import { BorderBox8 } from 'datav-vue3'
 
 // ── State ──────────────────────────────────
 const loading = ref(false)
@@ -160,6 +167,7 @@ const pricingChart = ref(null)
 
 let trendInstance = null
 let pricingInstance = null
+const pricingData = ref(null)
 
 // ── Computed ───────────────────────────────
 const currentKeyName = computed(() => {
@@ -314,6 +322,12 @@ async function switchKey(i) {
   await refresh()
 }
 
+async function loadPricing() {
+  try {
+    pricingData.value = await API('/api/pricing')
+  } catch (e) { console.error(e) }
+}
+
 // ── Charts ─────────────────────────────────
 function renderCharts() {
   renderTrendChart()
@@ -377,10 +391,35 @@ function renderPricingChart() {
   if (!pricingChart.value) return
   if (!pricingInstance) pricingInstance = echarts.init(pricingChart.value)
 
-  const models = ['V4 Flash', 'V4 Pro']
-  const inputData = [1.0, 3.0]
-  const outputData = [2.0, 6.0]
-  const cacheData = [0.02, 0.025]
+  const pricing = pricingData.value
+  const models = []
+  const inputData = []
+  const outputData = []
+  const cacheData = []
+  const currencyMap = {} // model name -> currency symbol
+
+  if (pricing?.deepseek) {
+    for (const [id, info] of Object.entries(pricing.deepseek)) {
+      const label = info.name
+      models.push(label)
+      currencyMap[label] = '¥'
+      inputData.push(info.input)
+      outputData.push(info.output)
+      cacheData.push(info.cache_hit || 0)
+    }
+  }
+  if (pricing?.openrouter) {
+    for (const [id, info] of Object.entries(pricing.openrouter)) {
+      const label = info.name
+      models.push(label)
+      currencyMap[label] = '$'
+      inputData.push(info.input)
+      outputData.push(info.output)
+      cacheData.push(info.cache_hit || 0)
+    }
+  }
+
+  if (models.length === 0) return
 
   const option = {
     backgroundColor: 'transparent',
@@ -397,11 +436,11 @@ function renderPricingChart() {
       data: models,
       axisLine: { lineStyle: { color: '#1e2959' } },
       axisTick: { show: false },
-      axisLabel: { color: '#e0e6ff', fontSize: 10 },
+      axisLabel: { color: '#e0e6ff', fontSize: 9, interval: 0 },
     },
     yAxis: {
       type: 'value',
-      name: '¥/M',
+      name: '价格/M',
       nameTextStyle: { color: '#6b7394', fontSize: 8 },
       splitLine: { lineStyle: { color: '#1a2040', type: 'dashed' } },
       axisLabel: { color: '#6b7394', fontSize: 9 },
@@ -412,9 +451,10 @@ function renderPricingChart() {
       borderColor: '#1e2959',
       textStyle: { color: '#e0e6ff', fontSize: 11 },
       formatter: (params) => {
-        let s = `<b>${params[0].axisValue}</b><br/>`
+        const cur = currencyMap[params[0].axisValue] || ''
+        let s = `<b>${params[0].axisValue}</b> (${cur})<br/>`
         params.forEach(p => {
-          s += `${p.marker} ${p.seriesName}: <b>¥${p.value}</b>/百万<br/>`
+          s += `${p.marker} ${p.seriesName}: <b>${cur}${p.value}</b>/百万<br/>`
         })
         return s
       },
@@ -431,8 +471,8 @@ function renderPricingChart() {
           borderRadius: [3, 3, 0, 0],
         },
         label: {
-          show: true, position: 'top', color: '#6b7394', fontSize: 8,
-          formatter: (p) => p.value >= 1 ? p.value.toFixed(1) : p.value.toFixed(3),
+          show: true, position: 'top', color: '#6b7394', fontSize: 7,
+          formatter: (p) => p.value >= 1 ? p.value.toFixed(1) : (p.value === 0 ? '免费' : p.value.toFixed(2)),
         },
       },
       {
@@ -446,8 +486,8 @@ function renderPricingChart() {
           borderRadius: [3, 3, 0, 0],
         },
         label: {
-          show: true, position: 'top', color: '#6b7394', fontSize: 8,
-          formatter: (p) => p.value >= 1 ? p.value.toFixed(1) : p.value.toFixed(3),
+          show: true, position: 'top', color: '#6b7394', fontSize: 7,
+          formatter: (p) => p.value >= 1 ? p.value.toFixed(1) : (p.value === 0 ? '免费' : p.value.toFixed(2)),
         },
       },
       {
@@ -461,8 +501,8 @@ function renderPricingChart() {
           borderRadius: [3, 3, 0, 0],
         },
         label: {
-          show: true, position: 'top', color: '#6b7394', fontSize: 8,
-          formatter: (p) => p.value.toFixed(3),
+          show: true, position: 'top', color: '#6b7394', fontSize: 7,
+          formatter: (p) => p.value > 0 ? p.value.toFixed(2) : (p.value === 0 ? '免费' : ''),
         },
       },
     ],
@@ -478,7 +518,13 @@ let clickOutside
 
 onMounted(async () => {
   await loadKeys()
-  if (keys.value.length > 0) await refresh()
+  await loadPricing()
+  if (keys.value.length > 0) {
+    await refresh()
+  } else {
+    await nextTick()
+    renderPricingChart()
+  }
 
   // ResizeObserver 比 window.resize 更可靠（pywebview 兼容）
   if (trendChart.value) {
@@ -626,18 +672,28 @@ onUnmounted(() => clearInterval(timer))
 .stat-value { font-size: 18px; font-weight: 700; }
 .stat-value.green { color: var(--green); }
 .stat-value.dim { color: var(--text-dim); }
+.stat-value.digital {
+  animation: flipIn 0.4s cubic-bezier(0.18, 0.89, 0.32, 1.28);
+}
+@keyframes flipIn {
+  0% { transform: translateY(-60%); opacity: 0; }
+  60% { transform: translateY(5%); }
+  100% { transform: translateY(0); opacity: 1; }
+}
 
 /* Charts */
 .chart-card {
-  background: var(--card-bg); border: 1px solid var(--border);
-  border-radius: 10px; padding: 14px; margin-bottom: 10px;
+  padding: 6px; margin-bottom: 0; width: 100%;
 }
 .card-title {
   font-size: 12px; color: var(--text-dim); margin-bottom: 8px;
 }
 .chart-wrap { width: 100%; min-height: 180px; height: 30vh; }
 .chart-wrap-small { width: 100%; min-height: 140px; height: 25vh; }
-.chart-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.chart-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+.flex-half { min-height: 220px; }
+.flex-half > .chart-card { flex: 1; }
+.chart-spacer { margin-bottom: 8px; min-height: 240px; }
 
 /* Cost Area */
 .cost-area { text-align: center; padding: 4px 0; }

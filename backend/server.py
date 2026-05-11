@@ -63,6 +63,50 @@ PRICING = {
     },
 }
 
+# OpenRouter 热门模型定价 (USD / 百万 Token)
+OPENROUTER_PRICING = {
+    "ring-2.6-1t": {
+        "name": "Ring 2.6 1T",
+        "desc": "蚂蚁百灵·万亿参数·免费",
+        "input": 0,
+        "output": 0,
+        "cache_hit": 0,
+    },
+    "claude-opus-4.7": {
+        "name": "Claude Opus 4.7",
+        "desc": "最强编码·长任务",
+        "input": 5.0,
+        "output": 25.0,
+        "cache_hit": 0.5,
+    },
+    "claude-sonnet-4.6": {
+        "name": "Claude Sonnet 4.6",
+        "desc": "性价比·编程日常",
+        "input": 3.0,
+        "output": 15.0,
+        "cache_hit": 0.3,
+    },
+    "gpt-5.4": {
+        "name": "GPT-5.4",
+        "desc": "OpenAI·1M上下文",
+        "input": 2.5,
+        "output": 15.0,
+        "cache_hit": 0.25,
+    },
+    "gemini-3.1-pro": {
+        "name": "Gemini 3.1 Pro",
+        "desc": "Google·大窗口",
+        "input": 1.25,
+        "output": 5.0,
+        "cache_hit": 0.25,
+    },
+}
+
+# 合并定价（供前端使用）
+ALL_PRICING = {}
+ALL_PRICING.update(PRICING)
+ALL_PRICING.update(OPENROUTER_PRICING)
+
 
 # ── 模型 ────────────────────────────────────
 class KeyAddRequest(BaseModel):
@@ -235,8 +279,12 @@ def api_delete_history(req: HistoryDeleteRequest):
 
 @app.get("/api/pricing")
 def api_pricing():
-    """获取模型定价"""
-    return {"models": PRICING, "night_discount": True}
+    """获取模型定价（含 OpenRouter）"""
+    return {
+        "deepseek": PRICING,
+        "openrouter": OPENROUTER_PRICING,
+        "night_discount": True,
+    }
 
 
 @app.get("/api/keys")
