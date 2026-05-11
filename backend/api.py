@@ -1,16 +1,17 @@
-"""DeepSeek API 客户端 — 查询余额和用量"""
+"""DeepSeek / OpenRouter API 客户端 — 查询余额和用量"""
 
 import requests
 from datetime import date, datetime, timedelta
 
-BASE_URL = "https://api.deepseek.com"
+DEEPSEEK_BASE = "https://api.deepseek.com"
+OPENROUTER_BASE = "https://openrouter.ai/api/v1"
 
 
 def get_balance(api_key: str) -> dict | None:
     """查询账户余额"""
     try:
         resp = requests.get(
-            f"{BASE_URL}/user/balance",
+            f"{DEEPSEEK_BASE}/user/balance",
             headers={
                 "Accept": "application/json",
                 "Authorization": f"Bearer {api_key}",
@@ -36,7 +37,7 @@ def get_usage(api_key: str, start_date: str, end_date: str) -> dict | None:
     """查询指定日期范围的用量，按模型汇总返回"""
     try:
         resp = requests.get(
-            f"{BASE_URL}/v1/usage",
+            f"{DEEPSEEK_BASE}/v1/usage",
             headers={
                 "Accept": "application/json",
                 "Authorization": f"Bearer {api_key}",
@@ -104,7 +105,7 @@ def estimate_cost(model_stats: dict) -> dict:
     """根据模型用量估算费用（CNY/百万token）"""
     # DeepSeek 当前定价 (2025-2026)
     PRICING = {
-        "deepseek-chat": {"input": 2.0, "output": 8.0, "cache_hit": 0.5},
+        "deepseek-v4-flash": {"input": 2.0, "output": 8.0, "cache_hit": 0.5},
         "deepseek-reasoner": {"input": 4.0, "output": 16.0, "cache_hit": 1.0},
     }
 
@@ -112,8 +113,8 @@ def estimate_cost(model_stats: dict) -> dict:
     for model, stats in model_stats.items():
         price = PRICING.get(model)
         if not price:
-            # fallback: 按 chat 价格
-            price = PRICING["deepseek-chat"]
+            # fallback: 按 v4-flash 价格
+            price = PRICING["deepseek-v4-flash"]
         prompt_cost = (stats["prompt_tokens"] / 1_000_000) * price["input"]
         completion_cost = (stats["completion_tokens"] / 1_000_000) * price["output"]
         result[model] = {
@@ -122,3 +123,32 @@ def estimate_cost(model_stats: dict) -> dict:
             "total_cost": round(prompt_cost + completion_cost, 4),
         }
     return result
+
+
+def get_openrouter_balance(api_key: str) -> dict | None:
+    """查询 OpenRouter 账户余额 (GET /api/v1/key)"""
+    try:
+        resp = requests.get(
+            f"{OPENROUTER_BASE}/key",
+            headers={
+                "Accept": "application/json",
+                "Authorization": f"Bearer {api_key}",
+            },
+            timeout=15,
+        )
+        resp.raise_for_status()
+        data = resp.json().get("data", {})
+        limit = data.get("limit") or 0
+        usage = data.get("usage") or 0
+        remaining = data.get("limit_remaining") or 0
+        return {
+            "label": data.get("label", ""),
+            "limit": float(limit),
+            "usage": float(usage),
+            "limit_remaining": float(remaining),
+            "is_free_tier": data.get("is_free_tier", False),
+            "disabled": data.get("disabled", False),
+        }
+    except Exception as e:
+        print(f"[API] OpenRouter 余额查询失败: {e}")
+        return None

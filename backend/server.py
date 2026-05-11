@@ -27,10 +27,12 @@ def get_static_dir() -> Path:
         base = Path(__file__).parent.parent
     return base / "frontend" / "dist"
 
-from api import get_balance as _get_balance
+from api import get_balance as _get_balance, get_openrouter_balance as _get_or_balance
 from config import (
     load_keys, save_keys, add_key, delete_key,
     get_active_key_index, set_active_key_index,
+    load_or_keys, add_or_key, delete_or_key,
+    get_active_or_key_index, set_active_or_key_index,
 )
 
 app = FastAPI(title="DeepSeek Monitor API")
@@ -159,6 +161,25 @@ def record_balance(key_name: str, balance: dict):
     cutoff = (date.today() - timedelta(days=90)).isoformat()
     history = [h for h in history if h["date"] >= cutoff]
     save_history(key_name, history)
+
+
+def record_or_balance(key_name: str, balance: dict):
+    """记录 OpenRouter 每日余额快照"""
+    history = load_history("_or_" + key_name)
+    today = date.today().isoformat()
+    entry = {
+        "date": today,
+        "total": balance.get("total", 0),
+        "usage": balance.get("usage", 0),
+        "limit": balance.get("limit", 0),
+    }
+    if history and history[-1].get("date") == today:
+        history[-1] = entry
+    else:
+        history.append(entry)
+    cutoff = (date.today() - timedelta(days=90)).isoformat()
+    history = [h for h in history if h["date"] >= cutoff]
+    save_history("_or_" + key_name, history)
 
 
 def compute_daily_cost(history: list[dict]) -> dict:
@@ -324,6 +345,128 @@ def api_set_active(req: ActiveKeyRequest):
     return {"ok": True}
 
 
+# ── OpenRouter API 路由 ───────────────────────
+@app.get("/api/openrouter/balance")
+def api_or_balance():
+    keys = load_or_keys()
+    if not keys:
+        raise HTTPException(400, "请先添加 OpenRouter API Key")
+    idx = get_active_or_key_index()
+    if idx >= len(keys):
+        idx = 0
+    key = keys[idx]
+    data = _get_or_balance(key["api_key"])
+    if data is None:
+        raise HTTPException(502, "查询余额失败，请检查 API Key 或网络")
+    bal = {
+        "total": data["limit_remaining"],
+        "usage": data["usage"],
+        "limit": data["limit"],
+        "currency": "USD",
+        "is_free_tier": data["is_free_tier"],
+    }
+    record_or_balance(key["name"], bal)
+    history = load_history("_or_" + key["name"])
+    daily_cost = compute_daily_cost(history)
+    return {
+        "key_name": key["name"],
+        "balance": bal,
+        "history": history[-14:],
+        "daily_cost": daily_cost,
+        "today_cost": daily_cost.get(date.today().isoformat(), 0),
+    }
+
+
+@app.get("/api/openrouter/keys")
+def api_list_or_keys():
+    keys = load_or_keys()
+    active = get_active_or_key_index()
+    return {
+        "keys": [{"name": k["name"], "masked": k["api_key"][:9] + "***"} for k in keys],
+        "active_index": active,
+    }
+
+
+@app.post("/api/openrouter/keys")
+def api_add_or_key(req: KeyAddRequest):
+    if not req.name.strip():
+        raise HTTPException(400, "名称不能为空")
+    if not req.api_key.startswith("sk-or-v1-"):
+        raise HTTPException(400, "OpenRouter Key 格式应为 sk-or-v1- 开头")
+    add_or_key(req.name.strip(), req.api_key.strip())
+    return {"ok": True}
+
+
+@app.delete("/api/openrouter/keys/{name}")
+def api_delete_or_key(name: str):
+    delete_or_key(name)
+    return {"ok": True}
+
+
+@app.put("/api/openrouter/keys/active")
+def api_set_active_or_key(req: ActiveKeyRequest):
+    set_active_or_key_index(req.index)
+    return {"ok": True}
+
+
+class ORHistoryAddRequest(BaseModel):
+    date: str
+    total: float
+    usage: float = 0.0
+    limit: float = 0.0
+
+
+@app.get("/api/openrouter/history")
+def api_or_history():
+    keys = load_or_keys()
+    if not keys:
+        return {"history": [], "daily_cost": {}}
+    idx = get_active_or_key_index()
+    if idx >= len(keys):
+        idx = 0
+    history = load_history("_or_" + keys[idx]["name"])
+    daily_cost = compute_daily_cost(history)
+    return {"history": history[-14:], "daily_cost": daily_cost}
+
+
+@app.post("/api/openrouter/history")
+def api_add_or_history(req: ORHistoryAddRequest):
+    keys = load_or_keys()
+    if not keys:
+        raise HTTPException(400, "请先添加 OpenRouter API Key")
+    idx = get_active_or_key_index()
+    if idx >= len(keys):
+        idx = 0
+    key = keys[idx]
+    history = load_history("_or_" + key["name"])
+    entry = {"date": req.date, "total": req.total, "usage": req.usage, "limit": req.limit}
+    history.append(entry)
+    history.sort(key=lambda h: h["date"])
+    seen = {}
+    for h in history:
+        seen[h["date"]] = h
+    history = list(seen.values())
+    history.sort(key=lambda h: h["date"])
+    save_history("_or_" + key["name"], history)
+    daily_cost = compute_daily_cost(history)
+    return {"history": history[-14:], "daily_cost": daily_cost}
+
+
+@app.post("/api/openrouter/history/delete")
+def api_delete_or_history(req: HistoryDeleteRequest):
+    keys = load_or_keys()
+    if not keys:
+        raise HTTPException(400, "请先添加 OpenRouter API Key")
+    idx = get_active_or_key_index()
+    if idx >= len(keys):
+        idx = 0
+    key = keys[idx]
+    history = load_history("_or_" + key["name"])
+    history = [h for h in history if h["date"] != req.date]
+    save_history("_or_" + key["name"], history)
+    return {"ok": True}
+
+
 # ── 静态文件（生产模式）──────────────────────
 STATIC_DIR = get_static_dir()
 if STATIC_DIR.exists():
@@ -374,7 +517,7 @@ if __name__ == "__main__":
 
     # 原生窗口
     webview.create_window(
-        title="DeepSeek 用量监控",
+        title="AI 用量监控",
         url=url,
         width=480,
         height=640,

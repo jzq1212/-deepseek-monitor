@@ -4,7 +4,10 @@
     <header class="header">
       <div class="header-left">
         <span class="dot live"></span>
-        <span class="title">DeepSeek 用量监控</span>
+        <div class="mode-switch">
+          <button :class="{ active: provider === 'deepseek' }" @click="switchProvider('deepseek')">DeepSeek</button>
+          <button :class="{ active: provider === 'openrouter' }" @click="switchProvider('openrouter')">OpenRouter</button>
+        </div>
       </div>
       <div class="header-right">
         <button class="btn-icon" @click="showHistoryModal = true" title="补录历史余额">🕐</button>
@@ -19,21 +22,39 @@
     <div class="modal-overlay" v-if="showHistoryModal" @click.self="showHistoryModal = false">
       <div class="modal">
         <h3>补录历史余额</h3>
-        <p class="modal-desc">从 DeepSeek 官网 Billing 页面找到历史余额，逐条补录即可看到消费趋势。</p>
+        <p class="modal-desc">{{ provider === 'deepseek' ? '从 DeepSeek 官网 Billing 页面找到历史余额，逐条补录即可看到消费趋势。' : '从 OpenRouter 页面找到历史余额，逐条补录即可看到额度趋势。' }}</p>
         <div class="history-list">
           <div class="history-row header-row">
-            <span>日期</span><span>余额</span><span></span>
+            <span>日期</span>
+            <span v-if="provider === 'deepseek'">余额</span>
+            <template v-else>
+              <span>剩余</span><span>已用</span><span>上限</span>
+            </template>
+            <span></span>
           </div>
-          <div v-for="(h, i) in history" :key="i" class="history-row">
+          <div v-for="(h, i) in history" :key="i" class="history-row" :class="{ 'or-row': provider === 'openrouter' }">
             <span>{{ h.date }}</span>
-            <span>¥{{ h.total.toFixed(2) }}</span>
+            <template v-if="provider === 'deepseek'">
+              <span>¥{{ (h.total||0).toFixed(2) }}</span>
+            </template>
+            <template v-else>
+              <span>{{ sym }}{{ (h.total||0).toFixed(2) }}</span>
+              <span>{{ sym }}{{ (h.usage||0).toFixed(2) }}</span>
+              <span>{{ sym }}{{ (h.limit||0).toFixed(2) }}</span>
+            </template>
             <button class="btn-xs danger" @click="removeHistory(h.date)">删除</button>
           </div>
         </div>
-        <div class="manual-row">
+        <div class="manual-row" :class="{ 'or-input': provider === 'openrouter' }">
           <input v-model="manualDate" type="date" class="mini-input" />
-          <input v-model="manualBalance" type="number" step="0.01"
-                 placeholder="余额" class="mini-input" />
+          <template v-if="provider === 'deepseek'">
+            <input v-model="manualBalance" type="number" step="0.01" placeholder="余额" class="mini-input" />
+          </template>
+          <template v-else>
+            <input v-model="manualBalance" type="number" step="0.01" placeholder="剩余额度" class="mini-input mini-sm" />
+            <input v-model="manualUsage" type="number" step="0.01" placeholder="已用" class="mini-input mini-sm" />
+            <input v-model="manualLimit" type="number" step="0.01" placeholder="上限" class="mini-input mini-sm" />
+          </template>
           <button class="btn" @click="addHistory">添加</button>
         </div>
         <div class="modal-btns">
@@ -50,10 +71,10 @@
       </div>
       <div class="key-actions">
         <button class="btn-sm" @click="showAddKey = true">+ 添加</button>
-        <button class="btn-sm danger" @click="deleteCurrentKey" v-if="keys.length > 0">删除</button>
+        <button class="btn-sm danger" @click="deleteCurrentKey" v-if="currentKeys.length > 0">删除</button>
       </div>
       <div class="key-menu" v-if="showKeyMenu">
-        <div v-for="(k, i) in keys" :key="i"
+        <div v-for="(k, i) in currentKeys" :key="i"
              class="key-item" :class="{ active: i === activeIndex }"
              @click="switchKey(i)">
           {{ k.name }}
@@ -65,20 +86,20 @@
     <!-- Add Key Modal -->
     <div class="modal-overlay" v-if="showAddKey" @click.self="showAddKey = false">
       <div class="modal">
-        <h3>添加 API Key</h3>
+        <h3>添加 {{ provider === 'deepseek' ? 'DeepSeek' : 'OpenRouter' }} API Key</h3>
         <input v-model="newKeyName" placeholder="名称（如：个人账号）" class="input" />
-        <input v-model="newKeyValue" placeholder="sk-..." type="password" class="input" />
+        <input v-model="newKeyValue" :placeholder="provider === 'deepseek' ? 'sk-...' : 'sk-or-v1-...'" type="password" class="input" />
         <div class="modal-btns">
           <button class="btn" @click="addKey">确认添加</button>
           <button class="btn secondary" @click="showAddKey = false">取消</button>
         </div>
-        <a href="https://platform.deepseek.com/api_keys" target="_blank"
-           class="link">点此获取 Key →</a>
+        <a v-if="provider === 'deepseek'" href="https://platform.deepseek.com/api_keys" target="_blank" class="link">点此获取 Key →</a>
+        <a v-else href="https://openrouter.ai/settings/keys" target="_blank" class="link">点此获取 OpenRouter Key →</a>
       </div>
     </div>
 
-    <!-- Balance Cards -->
-    <div class="stat-row" v-if="balance">
+    <!-- Balance Cards: DeepSeek -->
+    <div class="stat-row" v-if="balance && provider === 'deepseek'">
       <div class="stat-card glow-blue">
         <div class="stat-label">总余额</div>
         <div class="stat-value green digital" :key="balance.total.toFixed(2)">{{ sym }}{{ balance.total.toFixed(2) }}</div>
@@ -93,10 +114,26 @@
       </div>
     </div>
 
+    <!-- Balance Cards: OpenRouter -->
+    <div class="stat-row" v-if="balance && provider === 'openrouter'">
+      <div class="stat-card glow-blue">
+        <div class="stat-label">剩余额度</div>
+        <div class="stat-value green digital" :key="(balance.total||0).toFixed(2)">{{ sym }}{{ (balance.total||0).toFixed(2) }}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">已用额度</div>
+        <div class="stat-value">{{ sym }}{{ (balance.usage||0).toFixed(2) }}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">额度上限</div>
+        <div class="stat-value dim">{{ sym }}{{ (balance.limit||0).toFixed(2) }}</div>
+      </div>
+    </div>
+
     <!-- Charts -->
     <BorderBox8 :color="['#00d4ff', '#409eff']" background-color="transparent" class="chart-spacer">
       <div class="chart-card" ref="trendCard">
-        <div class="card-title">余额趋势 (近14天)</div>
+        <div class="card-title">{{ provider === 'deepseek' ? '余额趋势 (近14天)' : '额度趋势 (近14天)' }}</div>
         <div class="chart-wrap" ref="trendChart"></div>
       </div>
     </BorderBox8>
@@ -104,14 +141,16 @@
     <div class="chart-row">
       <BorderBox8 :color="['#a855f7', '#7c3aed']" background-color="transparent" class="flex-half">
         <div class="chart-card half" ref="pricingCard">
-          <div class="card-title">模型定价对比 <span style="font-size:9px;opacity:0.5">¥/DeepSeek &nbsp;$≈7.2¥/OpenRouter</span></div>
+          <div class="card-title">{{ provider === 'deepseek' ? '模型定价 (CNY/百万Token)' : '模型定价 (USD/百万Token)' }}</div>
           <div class="chart-wrap-small" ref="pricingChart"></div>
         </div>
       </BorderBox8>
       <BorderBox8 :color="['#22c55e', '#15803d']" background-color="transparent" class="flex-half">
         <div class="chart-card half">
           <div class="card-title">消费统计</div>
-          <div class="cost-area" v-if="balance">
+
+          <!-- DeepSeek 消费统计 -->
+          <div class="cost-area" v-if="balance && provider === 'deepseek'">
             <div class="big-number">{{ estimatedTokens }}</div>
             <div class="sub-text">可用 Token</div>
             <div class="cost-divider"></div>
@@ -126,13 +165,31 @@
             <div class="tip-text" v-if="!hasHistory">点击顶部 🕐 补录历史余额</div>
             <div class="tip-text" v-else>已积累 {{ history.length }} 天数据</div>
           </div>
+
+          <!-- OpenRouter 消费统计 -->
+          <div class="cost-area" v-if="balance && provider === 'openrouter'">
+            <div class="big-number">{{ sym }}{{ (balance.total||0).toFixed(2) }}</div>
+            <div class="sub-text">剩余额度</div>
+            <div class="cost-divider"></div>
+            <div class="cost-row">
+              <span class="cost-label">已用</span>
+              <span class="cost-value">{{ sym }}{{ (balance.usage||0).toFixed(2) }}</span>
+            </div>
+            <div class="cost-row">
+              <span class="cost-label">上限</span>
+              <span class="cost-value">{{ sym }}{{ (balance.limit||0).toFixed(2) }}</span>
+            </div>
+            <div class="tip-text" v-if="balance.is_free_tier">免费层用户</div>
+            <div class="tip-text" v-else>付费用户</div>
+          </div>
         </div>
       </BorderBox8>
     </div>
 
     <!-- Footer -->
     <footer class="footer" v-if="balance">
-      <span>夜间优惠 00:30-08:30</span>
+      <span v-if="provider === 'deepseek'">夜间优惠 00:30-08:30</span>
+      <span v-else>OpenRouter {{ balance.is_free_tier ? '免费层' : '' }}</span>
       <span class="dim">{{ balance.currency }}</span>
     </footer>
   </div>
@@ -144,11 +201,13 @@ import * as echarts from 'echarts'
 import { BorderBox8 } from 'datav-vue3'
 
 // ── State ──────────────────────────────────
+const provider = ref('deepseek')  // 'deepseek' | 'openrouter'
 const loading = ref(false)
 const balance = ref(null)
 const history = ref([])
 const dailyCost = ref({})
-const keys = ref([])
+const keys = ref([])           // DeepSeek keys
+const orKeys = ref([])         // OpenRouter keys
 const activeIndex = ref(0)
 const lastRefresh = ref('')
 const showKeyMenu = ref(false)
@@ -157,6 +216,8 @@ const newKeyName = ref('')
 const newKeyValue = ref('')
 const manualDate = ref('')
 const manualBalance = ref('')
+const manualUsage = ref('')
+const manualLimit = ref('')
 const showHistoryModal = ref(false)
 
 // Refs
@@ -167,12 +228,16 @@ const pricingChart = ref(null)
 
 let trendInstance = null
 let pricingInstance = null
-const pricingData = ref(null)
 
 // ── Computed ───────────────────────────────
+const currentKeys = computed(() => {
+  return provider.value === 'deepseek' ? keys.value : orKeys.value
+})
+
 const currentKeyName = computed(() => {
-  if (activeIndex.value < keys.value.length) return keys.value[activeIndex.value].name
-  return keys.value.length > 0 ? keys.value[0].name : ''
+  const list = currentKeys.value
+  if (activeIndex.value < list.length) return list[activeIndex.value].name
+  return list.length > 0 ? list[0].name : ''
 })
 
 const sym = computed(() => {
@@ -181,7 +246,8 @@ const sym = computed(() => {
 
 const estimatedTokens = computed(() => {
   if (!balance.value || balance.value.total <= 0) return '0'
-  const avgPrice = 1.0 * 0.75 + 2.0 * 0.25 // Flash input:output=3:1
+  if (provider.value === 'openrouter') return sym.value + balance.value.total.toFixed(2)
+  const avgPrice = 1.0 * 0.75 + 2.0 * 0.25
   const tokens = balance.value.total / avgPrice * 1_000_000
   if (tokens >= 1_000_000) return (tokens / 1_000_000).toFixed(1) + 'M'
   if (tokens >= 1_000) return (tokens / 1_000).toFixed(1) + 'K'
@@ -209,20 +275,25 @@ onMounted(() => {
 async function addHistory() {
   if (!manualDate.value || !manualBalance.value) return
   try {
-    await API('/api/history', {
-      method: 'POST',
-      body: JSON.stringify({
-        date: manualDate.value,
-        total: parseFloat(manualBalance.value),
-        topped_up: balance.value?.topped_up || 0,
-        granted: balance.value?.granted || 0,
-      }),
-    })
-    // 自动推进日期到前一天，清空余额
+    const path = provider.value === 'deepseek' ? '/api/history' : '/api/openrouter/history'
+    const body = provider.value === 'deepseek' ? {
+      date: manualDate.value,
+      total: parseFloat(manualBalance.value),
+      topped_up: balance.value?.topped_up || 0,
+      granted: balance.value?.granted || 0,
+    } : {
+      date: manualDate.value,
+      total: parseFloat(manualBalance.value),
+      usage: parseFloat(manualUsage.value) || 0,
+      limit: parseFloat(manualLimit.value) || 0,
+    }
+    await API(path, { method: 'POST', body: JSON.stringify(body) })
     const d = new Date(manualDate.value)
     d.setDate(d.getDate() - 1)
     manualDate.value = d.toISOString().slice(0, 10)
     manualBalance.value = ''
+    manualUsage.value = ''
+    manualLimit.value = ''
     await refresh()
   } catch (e) { alert('补录失败: ' + e.message) }
 }
@@ -235,14 +306,26 @@ const API = (path, opts = {}) =>
       return r.json()
     })
 
+function apiPath(path) {
+  if (provider.value === 'openrouter') return '/api/openrouter' + path
+  return '/api' + path
+}
+
 async function refresh() {
   if (loading.value) return
   loading.value = true
   try {
-    const data = await API('/api/balance')
-    balance.value = data.balance
-    history.value = data.history || []
-    dailyCost.value = data.daily_cost || {}
+    if (provider.value === 'deepseek') {
+      const data = await API('/api/balance')
+      balance.value = data.balance
+      history.value = data.history || []
+      dailyCost.value = data.daily_cost || {}
+    } else {
+      const data = await API('/api/openrouter/balance')
+      balance.value = data.balance
+      history.value = data.history || []
+      dailyCost.value = data.daily_cost || {}
+    }
     lastRefresh.value = new Date().toLocaleTimeString('zh-CN', { hour12: false })
     await nextTick()
     renderCharts()
@@ -255,8 +338,13 @@ async function refresh() {
 
 async function loadKeys() {
   try {
-    const data = await API('/api/keys')
-    keys.value = data.keys || []
+    const path = provider.value === 'deepseek' ? '/api/keys' : '/api/openrouter/keys'
+    const data = await API(path)
+    if (provider.value === 'deepseek') {
+      keys.value = data.keys || []
+    } else {
+      orKeys.value = data.keys || []
+    }
     activeIndex.value = data.active_index || 0
   } catch (e) { console.error(e) }
 }
@@ -264,7 +352,8 @@ async function loadKeys() {
 async function addKey() {
   if (!newKeyName.value.trim() || !newKeyValue.value.trim()) return
   try {
-    await API('/api/keys', {
+    const path = provider.value === 'deepseek' ? '/api/keys' : '/api/openrouter/keys'
+    await API(path, {
       method: 'POST',
       body: JSON.stringify({ name: newKeyName.value.trim(), api_key: newKeyValue.value.trim() }),
     })
@@ -272,8 +361,8 @@ async function addKey() {
     newKeyName.value = ''
     newKeyValue.value = ''
     await loadKeys()
-    if (keys.value.length === 1) activeIndex.value = 0
-    await switchKey(keys.value.length - 1)
+    if (currentKeys.value.length === 1) activeIndex.value = 0
+    await switchKey(currentKeys.value.length - 1)
   } catch (e) { alert('添加失败: ' + e.message) }
 }
 
@@ -283,31 +372,29 @@ async function removeHistory(dateStr) {
   const updated = history.value.filter(h => h.date !== dateStr)
   // 通过保存空历史来删除
   try {
-    // 直接操作后端不方便，我们用workaround: 重写整个历史
     history.value = updated
-    // 刷新会从后端重新加载，但后端还没删...
-    // 最简单的方法：post 一个标记删除的请求
-    await fetch('/api/history/delete', {
+    const path = provider.value === 'deepseek' ? '/api/history/delete' : '/api/openrouter/history/delete'
+    await API(path, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ date: dateStr }),
     })
     await refresh()
   } catch (e) {
-    // 降级：刷新
     await refresh()
   }
 }
 
 async function deleteCurrentKey() {
-  const name = keys.value[activeIndex.value]?.name
+  const list = currentKeys.value
+  const name = list[activeIndex.value]?.name
   if (!name || !confirm(`删除 Key "${name}"？`)) return
   try {
-    await API(`/api/keys/${encodeURIComponent(name)}`, { method: 'DELETE' })
+    const base = provider.value === 'deepseek' ? '/api/keys' : '/api/openrouter/keys'
+    await API(`${base}/${encodeURIComponent(name)}`, { method: 'DELETE' })
     showKeyMenu.value = false
     await loadKeys()
-    if (activeIndex.value >= keys.value.length) activeIndex.value = Math.max(0, keys.value.length - 1)
-    await API('/api/keys/active', {
+    if (activeIndex.value >= list.length) activeIndex.value = Math.max(0, list.length - 1)
+    await API(`${base}/active`, {
       method: 'PUT',
       body: JSON.stringify({ index: activeIndex.value }),
     })
@@ -318,20 +405,37 @@ async function deleteCurrentKey() {
 async function switchKey(i) {
   activeIndex.value = i
   showKeyMenu.value = false
-  await API('/api/keys/active', { method: 'PUT', body: JSON.stringify({ index: i }) })
+  const base = provider.value === 'deepseek' ? '/api/keys' : '/api/openrouter/keys'
+  await API(`${base}/active`, { method: 'PUT', body: JSON.stringify({ index: i }) })
   await refresh()
 }
 
-async function loadPricing() {
-  try {
-    pricingData.value = await API('/api/pricing')
-  } catch (e) { console.error(e) }
+async function switchProvider(p) {
+  if (provider.value === p) return
+  // 销毁旧图表实例
+  try { trendInstance?.dispose() } catch (e) {}
+  trendInstance = null
+  try { pricingInstance?.dispose() } catch (e) {}
+  pricingInstance = null
+  provider.value = p
+  balance.value = null
+  history.value = []
+  dailyCost.value = {}
+  activeIndex.value = 0
+  await nextTick()
+  await loadKeys()
+  if (currentKeys.value.length > 0) await refresh()
+  else renderPricingChart()
 }
 
 // ── Charts ─────────────────────────────────
 function renderCharts() {
-  renderTrendChart()
-  renderPricingChart()
+  try {
+    renderTrendChart()
+    renderPricingChart()
+  } catch (e) {
+    console.error('Chart render error:', e)
+  }
 }
 
 function renderTrendChart() {
@@ -391,35 +495,20 @@ function renderPricingChart() {
   if (!pricingChart.value) return
   if (!pricingInstance) pricingInstance = echarts.init(pricingChart.value)
 
-  const pricing = pricingData.value
-  const models = []
-  const inputData = []
-  const outputData = []
-  const cacheData = []
-  const currencyMap = {} // model name -> currency symbol
-
-  if (pricing?.deepseek) {
-    for (const [id, info] of Object.entries(pricing.deepseek)) {
-      const label = info.name
-      models.push(label)
-      currencyMap[label] = '¥'
-      inputData.push(info.input)
-      outputData.push(info.output)
-      cacheData.push(info.cache_hit || 0)
-    }
+  let models, inputData, outputData, cacheData, currency
+  if (provider.value === 'deepseek') {
+    models = ['V4 Flash', 'V4 Pro']
+    inputData = [1.0, 3.0]
+    outputData = [2.0, 6.0]
+    cacheData = [0.02, 0.025]
+    currency = '¥'
+  } else {
+    models = ['Ring 2.6 1T', 'Claude Opus 4.7', 'Claude Sonnet 4.6', 'GPT-5.4', 'Gemini 3.1 Pro']
+    inputData = [0, 5.0, 3.0, 2.5, 1.25]
+    outputData = [0, 25.0, 15.0, 15.0, 5.0]
+    cacheData = [0, 0.5, 0.3, 0.25, 0.25]
+    currency = '$'
   }
-  if (pricing?.openrouter) {
-    for (const [id, info] of Object.entries(pricing.openrouter)) {
-      const label = info.name
-      models.push(label)
-      currencyMap[label] = '$'
-      inputData.push(info.input)
-      outputData.push(info.output)
-      cacheData.push(info.cache_hit || 0)
-    }
-  }
-
-  if (models.length === 0) return
 
   const option = {
     backgroundColor: 'transparent',
@@ -436,11 +525,11 @@ function renderPricingChart() {
       data: models,
       axisLine: { lineStyle: { color: '#1e2959' } },
       axisTick: { show: false },
-      axisLabel: { color: '#e0e6ff', fontSize: 9, interval: 0 },
+      axisLabel: { color: '#e0e6ff', fontSize: 10 },
     },
     yAxis: {
       type: 'value',
-      name: '价格/M',
+      name: currency + '/M',
       nameTextStyle: { color: '#6b7394', fontSize: 8 },
       splitLine: { lineStyle: { color: '#1a2040', type: 'dashed' } },
       axisLabel: { color: '#6b7394', fontSize: 9 },
@@ -451,10 +540,9 @@ function renderPricingChart() {
       borderColor: '#1e2959',
       textStyle: { color: '#e0e6ff', fontSize: 11 },
       formatter: (params) => {
-        const cur = currencyMap[params[0].axisValue] || ''
-        let s = `<b>${params[0].axisValue}</b> (${cur})<br/>`
+        let s = `<b>${params[0].axisValue}</b><br/>`
         params.forEach(p => {
-          s += `${p.marker} ${p.seriesName}: <b>${cur}${p.value}</b>/百万<br/>`
+          s += `${p.marker} ${p.seriesName}: <b>${currency}${p.value}</b>/百万<br/>`
         })
         return s
       },
@@ -471,8 +559,8 @@ function renderPricingChart() {
           borderRadius: [3, 3, 0, 0],
         },
         label: {
-          show: true, position: 'top', color: '#6b7394', fontSize: 7,
-          formatter: (p) => p.value >= 1 ? p.value.toFixed(1) : (p.value === 0 ? '免费' : p.value.toFixed(2)),
+          show: true, position: 'top', color: '#6b7394', fontSize: 8,
+          formatter: (p) => p.value >= 1 ? p.value.toFixed(1) : p.value.toFixed(3),
         },
       },
       {
@@ -486,8 +574,8 @@ function renderPricingChart() {
           borderRadius: [3, 3, 0, 0],
         },
         label: {
-          show: true, position: 'top', color: '#6b7394', fontSize: 7,
-          formatter: (p) => p.value >= 1 ? p.value.toFixed(1) : (p.value === 0 ? '免费' : p.value.toFixed(2)),
+          show: true, position: 'top', color: '#6b7394', fontSize: 8,
+          formatter: (p) => p.value >= 1 ? p.value.toFixed(1) : p.value.toFixed(3),
         },
       },
       {
@@ -501,8 +589,8 @@ function renderPricingChart() {
           borderRadius: [3, 3, 0, 0],
         },
         label: {
-          show: true, position: 'top', color: '#6b7394', fontSize: 7,
-          formatter: (p) => p.value > 0 ? p.value.toFixed(2) : (p.value === 0 ? '免费' : ''),
+          show: true, position: 'top', color: '#6b7394', fontSize: 8,
+          formatter: (p) => p.value.toFixed(3),
         },
       },
     ],
@@ -518,13 +606,8 @@ let clickOutside
 
 onMounted(async () => {
   await loadKeys()
-  await loadPricing()
-  if (keys.value.length > 0) {
-    await refresh()
-  } else {
-    await nextTick()
-    renderPricingChart()
-  }
+  if (currentKeys.value.length > 0) await refresh()
+  else { await nextTick(); renderPricingChart() }
 
   // ResizeObserver 比 window.resize 更可靠（pywebview 兼容）
   if (trendChart.value) {
@@ -583,6 +666,21 @@ onUnmounted(() => clearInterval(timer))
   50% { opacity: 0.4; }
 }
 .title { font-size: 16px; font-weight: 700; letter-spacing: 1px; }
+.mode-switch {
+  display: flex; gap: 2px; background: var(--card-bg); border: 1px solid var(--border);
+  border-radius: 8px; overflow: hidden;
+}
+.mode-switch button {
+  background: transparent; border: none; color: var(--text-dim);
+  padding: 4px 12px; cursor: pointer; font-size: 12px; font-weight: 600;
+  transition: all 0.2s; white-space: nowrap;
+}
+.mode-switch button.active {
+  background: var(--blue); color: #fff;
+}
+.mode-switch button:hover:not(.active) {
+  color: var(--text);
+}
 .time { font-size: 11px; color: var(--text-dim); margin-right: 8px; }
 .btn-icon {
   background: var(--card-bg); border: 1px solid var(--border); color: var(--text);
@@ -718,13 +816,17 @@ onUnmounted(() => clearInterval(timer))
   padding: 5px 8px; font-size: 12px; border-radius: 4px;
   align-items: center;
 }
+.history-row.or-row {
+  grid-template-columns: 1fr 1fr 1fr 1fr 50px;
+}
 .history-row:hover { background: rgba(64,158,255,0.05); }
 .history-row.header-row { color: var(--text-dim); font-size: 10px; }
-.manual-row { display: flex; gap: 6px; justify-content: center; align-items: center; margin-bottom: 8px; }
+.manual-row { display: flex; gap: 6px; justify-content: center; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
 .mini-input {
   background: #0a0e27; border: 1px solid var(--border); border-radius: 4px;
   color: var(--text); font-size: 12px; padding: 6px 8px; width: 110px; outline: none;
 }
+.mini-sm { width: 72px; }
 .mini-input:focus { border-color: var(--blue); }
 .btn-xs {
   background: none; border: none; color: var(--text-dim); font-size: 10px;

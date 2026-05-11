@@ -152,3 +152,82 @@ def set_active_key_index(index: int) -> None:
     data["active_index"] = index
     with open(CONFIG_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+# ── OpenRouter Key 管理 ──────────────────────
+OR_CONFIG_FILE = CONFIG_DIR / "openrouter_config.json"
+
+
+def load_or_keys() -> list[dict]:
+    _ensure_dir()
+    if not OR_CONFIG_FILE.exists():
+        return []
+    try:
+        with open(OR_CONFIG_FILE, "r", encoding="utf-8") as f:
+            raw = json.load(f)
+    except Exception:
+        return []
+    keys = []
+    for item in raw.get("keys", []):
+        try:
+            plain = _decrypt(item["encrypted"])
+            keys.append({"name": item["name"], "api_key": plain})
+        except Exception:
+            pass
+    return keys
+
+
+def save_or_keys(keys: list[dict]) -> None:
+    _ensure_dir()
+    old_index = 0
+    if OR_CONFIG_FILE.exists():
+        try:
+            with open(OR_CONFIG_FILE, "r", encoding="utf-8") as f:
+                old = json.load(f)
+            old_index = old.get("active_index", 0)
+        except Exception:
+            pass
+    payload = {"keys": [], "active_index": old_index}
+    for k in keys:
+        cipher = _encrypt(k["api_key"])
+        payload["keys"].append({"name": k["name"], "encrypted": cipher})
+    with open(OR_CONFIG_FILE, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+
+
+def add_or_key(name: str, api_key: str) -> None:
+    keys = load_or_keys()
+    keys.append({"name": name, "api_key": api_key})
+    save_or_keys(keys)
+
+
+def delete_or_key(name: str) -> None:
+    keys = load_or_keys()
+    keys = [k for k in keys if k["name"] != name]
+    save_or_keys(keys)
+
+
+def get_active_or_key_index() -> int:
+    _ensure_dir()
+    if not OR_CONFIG_FILE.exists():
+        return 0
+    try:
+        with open(OR_CONFIG_FILE, "r", encoding="utf-8") as f:
+            raw = json.load(f)
+        return raw.get("active_index", 0)
+    except Exception:
+        return 0
+
+
+def set_active_or_key_index(index: int) -> None:
+    _ensure_dir()
+    data = {}
+    if OR_CONFIG_FILE.exists():
+        try:
+            with open(OR_CONFIG_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception:
+            pass
+    data["active_index"] = index
+    with open(OR_CONFIG_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
