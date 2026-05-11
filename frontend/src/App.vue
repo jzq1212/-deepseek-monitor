@@ -507,8 +507,10 @@ onUnmounted(() => clearInterval(timer))
 
 <style scoped>
 .dashboard {
-  max-width: 480px;
+  width: 100%;
+  max-width: 100%;
   margin: 0 auto;
+  padding-bottom: 20px;
 }
 
 /* Header */
@@ -627,8 +629,8 @@ onUnmounted(() => clearInterval(timer))
 .card-title {
   font-size: 12px; color: var(--text-dim); margin-bottom: 8px;
 }
-.chart-wrap { width: 100%; height: 200px; }
-.chart-wrap-small { width: 100%; height: 172px; }
+.chart-wrap { width: 100%; min-height: 180px; height: 30vh; }
+.chart-wrap-small { width: 100%; min-height: 140px; height: 25vh; }
 .chart-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 
 /* Cost Area */

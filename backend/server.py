@@ -287,9 +287,9 @@ else:
 # ── 入口 ────────────────────────────────────
 if __name__ == "__main__":
     import uvicorn
-    import webbrowser
     import threading
     import socket
+    import webview
 
     # 自动找可用端口
     port = 8765
@@ -303,18 +303,35 @@ if __name__ == "__main__":
         except OSError:
             continue
 
-    url = f"http://localhost:{port}"
-    print("=" * 55)
-    print("  DeepSeek Monitor")
-    print(f"  Dashboard: {url}")
-    print(f"  API Docs:  {url}/docs")
-    print("=" * 55)
+    url = f"http://127.0.0.1:{port}"
 
-    # 延迟打开浏览器
-    def open_browser():
-        import time
-        time.sleep(1.5)
-        webbrowser.open(url)
-    threading.Thread(target=open_browser, daemon=True).start()
+    # 后台启动 uvicorn
+    def run_server():
+        uvicorn.run(app, host="127.0.0.1", port=port,
+                    log_level="error", log_config=None)
 
-    uvicorn.run(app, host="127.0.0.1", port=port, log_level="error", log_config=None)
+    server_thread = threading.Thread(target=run_server, daemon=True)
+    server_thread.start()
+
+    # 等待服务器就绪
+    import time
+    for _ in range(20):
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.connect(("127.0.0.1", port))
+            s.close()
+            break
+        except Exception:
+            time.sleep(0.3)
+
+    # 原生窗口
+    webview.create_window(
+        title="DeepSeek 用量监控",
+        url=url,
+        width=460,
+        height=620,
+        resizable=True,
+        min_size=(420, 500),
+        background_color="#0a0e27",
+    )
+    webview.start()
