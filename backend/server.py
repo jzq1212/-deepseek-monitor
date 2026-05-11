@@ -328,10 +328,10 @@ if __name__ == "__main__":
     webview.create_window(
         title="DeepSeek 用量监控",
         url=url,
-        width=460,
-        height=620,
+        width=480,
+        height=640,
         resizable=True,
-        min_size=(420, 500),
+        easy_drag=False,
         background_color="#0a0e27",
     )
     webview.start()

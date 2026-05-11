@@ -472,18 +472,23 @@ function renderPricingChart() {
 }
 
 // ── Lifecycle ──────────────────────────────
-let resizeHandler
+let trendObserver = null
+let pricingObserver = null
 let clickOutside
 
 onMounted(async () => {
   await loadKeys()
   if (keys.value.length > 0) await refresh()
 
-  resizeHandler = () => {
-    trendInstance?.resize()
-    pricingInstance?.resize()
+  // ResizeObserver 比 window.resize 更可靠（pywebview 兼容）
+  if (trendChart.value) {
+    trendObserver = new ResizeObserver(() => trendInstance?.resize())
+    trendObserver.observe(trendChart.value)
   }
-  window.addEventListener('resize', resizeHandler)
+  if (pricingChart.value) {
+    pricingObserver = new ResizeObserver(() => pricingInstance?.resize())
+    pricingObserver.observe(pricingChart.value)
+  }
 
   clickOutside = (e) => {
     if (!e.target.closest('.key-select') && !e.target.closest('.key-menu')) {
@@ -494,7 +499,8 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
-  window.removeEventListener('resize', resizeHandler)
+  trendObserver?.disconnect()
+  pricingObserver?.disconnect()
   document.removeEventListener('click', clickOutside)
   trendInstance?.dispose()
   pricingInstance?.dispose()
