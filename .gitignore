@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+
+# Build output
+frontend/dist/
+build/
+dist/
+__pycache__/
+*.pyc
+*.pyo
+*.spec
+
+# Distribution (large binaries)
+release/
+*.exe
+*.zip
+
+# User data (contains API keys!)
+.deepseek-monitor/
+backend/.deepseek-monitor/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+Thumbs.db
+.DS_Store

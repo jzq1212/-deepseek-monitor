@@ -1,0 +1,44 @@
+:root {
+  --bg: #0a0e27;
+  --card-bg: #111640;
+  --border: #1e2959;
+  --text: #e0e6ff;
+  --text-dim: #6b7394;
+  --blue: #409eff;
+  --cyan: #00d4ff;
+  --purple: #a855f7;
+  --green: #22c55e;
+  --orange: #f59e0b;
+  --red: #ef4444;
+  --glow-blue: 0 0 20px rgba(64, 158, 255, 0.15);
+  --glow-cyan: 0 0 20px rgba(0, 212, 255, 0.15);
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Grid background */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(30, 41, 89, 0.3) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(30, 41, 89, 0.3) 1px, transparent 1px);
+  background-size: 40px 40px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+#app {
+  position: relative;
+  z-index: 1;
+  padding: 16px;
+  min-height: 100vh;
+}
